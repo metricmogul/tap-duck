@@ -365,7 +365,7 @@ export class Terrain {
   addPen(rand) {
     const pen = this.level.pen;
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x8a6238, roughness: 0.85 });
-    const postGeo = new THREE.CylinderGeometry(0.07, 0.085, 1.05, 8);
+    const postGeo = new THREE.CylinderGeometry(0.07, 0.085, 1.3, 8);
     this.disposables.push(woodMat, postGeo);
 
     // fence ring with an opening of ~120 degrees facing open water
@@ -379,7 +379,7 @@ export class Terrain {
       const x = pen.x + Math.cos(a) * pen.r;
       const z = pen.z + Math.sin(a) * pen.r;
       const post = new THREE.Mesh(postGeo, woodMat);
-      post.position.set(x, 0.22, z);
+      post.position.set(x, 0.35, z);
       post.rotation.y = rand() * Math.PI;
       post.rotation.z = (rand() - 0.5) * 0.08;
       post.castShadow = true;
@@ -389,7 +389,7 @@ export class Terrain {
     for (let i = 0; i < posts.length - 1; i++) {
       const a = posts[i], b = posts[i + 1];
       const len = Math.hypot(b.x - a.x, b.z - a.z);
-      for (const ry of [0.3, 0.56]) {
+      for (const ry of [0.52, 0.82]) {
         const railGeo = new THREE.BoxGeometry(len * 1.04, 0.05, 0.05);
         this.disposables.push(railGeo);
         const rail = new THREE.Mesh(railGeo, woodMat);
@@ -403,7 +403,8 @@ export class Terrain {
     // soft golden glow marking the safe water
     const glowGeo = new THREE.CircleGeometry(pen.r * 0.88, 36);
     const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffd98a, transparent: true, opacity: 0.16, depthWrite: false,
+      color: 0xffd98a, transparent: true, opacity: 0.16,
+      depthWrite: false, depthTest: false, // waves can't hide the safe zone
     });
     this.disposables.push(glowGeo, glowMat);
     this.penGlow = new THREE.Mesh(glowGeo, glowMat);

@@ -56,8 +56,8 @@ export class WaterSim {
             d = Math.min(d, BASE_DAMP + (WEED_DAMP - BASE_DAMP) * Math.min(1, t * 1.6));
           }
         }
-        // extra damping right at the shore stops standing waves ringing forever
-        if (sd > -0.6) d -= 0.004;
+        // extra damping near the shore stops standing waves ringing forever
+        if (sd > -1.0) d -= 0.0055;
         this.damp[idx] = d;
       }
     }
@@ -88,7 +88,12 @@ export class WaterSim {
         const row = j * gw;
         for (let i = 1; i < gw - 1; i++) {
           const c = row + i;
-          if (mask[c]) u[c] += v[c] * (1 / SUBSTEPS);
+          if (!mask[c]) continue;
+          let h = u[c] + v[c] * (1 / SUBSTEPS);
+          // soft amplitude cap: stacked taps can't heave the surface over the banks
+          if (h > 0.3) { h = 0.3 + (h - 0.3) * 0.25; if (h > 0.42) h = 0.42; }
+          else if (h < -0.3) { h = -0.3 + (h + 0.3) * 0.25; if (h < -0.42) h = -0.42; }
+          u[c] = h;
         }
       }
     }
@@ -112,7 +117,7 @@ export class WaterSim {
         const dx = (i - gx) / rc;
         const dz = (j - gz) / rc;
         const g = Math.exp(-(dx * dx + dz * dz) * 2.2);
-        this.u[c] += strength * g;
+        this.u[c] = Math.min(this.u[c] + strength * g, 0.5); // taps can't pile past the cap
         this.v[c] += strength * 0.35 * g;
       }
     }

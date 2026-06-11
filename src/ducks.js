@@ -149,7 +149,7 @@ export class DuckFlock {
         wanderPhase: Math.random() * Math.PI * 2,
         state: 'dropping',
         penT: 0,
-        scale: 0.92 + Math.random() * 0.16,
+        scale: 1.05 + Math.random() * 0.18,
       };
       mesh.scale.setScalar(duck.scale);
       this.ducks.push(duck);

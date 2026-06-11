@@ -43,33 +43,54 @@ const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerH
 // bounds fit comfortably inside the frustum.
 const CAM_ELEV = THREE.MathUtils.degToRad(64);
 const camDir = new THREE.Vector3(0, Math.sin(CAM_ELEV), Math.cos(CAM_ELEV));
+const camTarget = new THREE.Vector3();
 let camDist = 20;
 
-function fitCamera(bounds) {
+// Frame the actual water (plus a sliver of bank), not the whole level bounds,
+// and leave headroom for the HUD cards at the top and bottom of the screen.
+function fitCamera(rect) {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  const m = 1.12;
+  camTarget.set((rect.minX + rect.maxX) / 2, 0, (rect.minZ + rect.maxZ) / 2);
   const corners = [
-    new THREE.Vector3(-bounds.w / 2 * m, 0, -bounds.h / 2 * m),
-    new THREE.Vector3(bounds.w / 2 * m, 0, -bounds.h / 2 * m),
-    new THREE.Vector3(-bounds.w / 2 * m, 0, bounds.h / 2 * m),
-    new THREE.Vector3(bounds.w / 2 * m, 0, bounds.h / 2 * m),
+    new THREE.Vector3(rect.minX, 0, rect.minZ),
+    new THREE.Vector3(rect.maxX, 0, rect.minZ),
+    new THREE.Vector3(rect.minX, 0, rect.maxZ),
+    new THREE.Vector3(rect.maxX, 0, rect.maxZ),
   ];
-  let lo = 5, hi = 120;
+  let lo = 4, hi = 120;
   const v = new THREE.Vector3();
   for (let it = 0; it < 24; it++) {
     const mid = (lo + hi) / 2;
-    camera.position.copy(camDir).multiplyScalar(mid);
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(camTarget).addScaledVector(camDir, mid);
+    camera.lookAt(camTarget);
     camera.updateMatrixWorld();
     let fits = true;
     for (const c of corners) {
       v.copy(c).project(camera);
-      if (Math.abs(v.x) > 0.96 || Math.abs(v.y) > 0.96) { fits = false; break; }
+      if (Math.abs(v.x) > 0.95 || Math.abs(v.y) > 0.82) { fits = false; break; }
     }
     if (fits) hi = mid; else lo = mid;
   }
   camDist = hi;
+}
+
+// Bounding rectangle of the water itself, scanned from the sim grid.
+function pondRect(sim) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let j = 0; j < sim.gh; j++) {
+    for (let i = 0; i < sim.gw; i++) {
+      if (sim.shore[j * sim.gw + i] >= 0) continue;
+      const x = (i + 0.5) * sim.cellX - sim.worldW / 2;
+      const z = (j + 0.5) * sim.cellZ - sim.worldH / 2;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+  }
+  const pad = 1.6; // a strip of bank so pens and reeds stay in frame
+  return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +132,8 @@ function buildLevel(index) {
   sun.shadow.camera.bottom = -b.h * 0.75;
   sun.shadow.camera.updateProjectionMatrix();
 
-  fitCamera(b);
+  game.rect = pondRect(game.sim);
+  fitCamera(game.rect);
   ui.setLevelName(game.level.name);
   ui.setProgress(0, game.level.target);
 }
@@ -289,17 +311,17 @@ function animate() {
   }
 
   // gentle idle drift so the scene breathes
-  camera.position.copy(camDir).multiplyScalar(camDist);
+  camera.position.copy(camTarget).addScaledVector(camDir, camDist);
   camera.position.x += Math.sin(time * 0.13) * 0.3;
   camera.position.z += Math.cos(time * 0.09) * 0.2;
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(camTarget);
 
   renderer.render(scene, camera);
 }
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
-  if (game.level) fitCamera(game.level.bounds);
+  if (game.rect) fitCamera(game.rect);
 });
 
 // prevent double-tap zoom on touch devices
