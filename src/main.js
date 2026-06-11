@@ -46,8 +46,9 @@ const camDir = new THREE.Vector3(0, Math.sin(CAM_ELEV), Math.cos(CAM_ELEV));
 const camTarget = new THREE.Vector3();
 let camDist = 20;
 
-// Frame the actual water (plus a sliver of bank), not the whole level bounds,
-// and leave headroom for the HUD cards at the top and bottom of the screen.
+// Fit the camera to the water's bounding box, then zoom in well past that —
+// the player drags to scroll around the parts that fall off screen.
+const ZOOM = 0.55; // fraction of the full-pond fit distance
 function fitCamera(rect) {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -72,7 +73,7 @@ function fitCamera(rect) {
     }
     if (fits) hi = mid; else lo = mid;
   }
-  camDist = hi;
+  camDist = Math.max(hi * ZOOM, 7);
 }
 
 // Bounding rectangle of the water itself, scanned from the sim grid.
@@ -175,11 +176,15 @@ function spawnRing(x, z, mult) {
   rings.push({ mesh, t: 0 });
 }
 
-function onTap(e) {
-  if (game.state !== 'playing') return;
-  ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+function screenToGround(cx, cy, out) {
+  ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  if (!raycaster.ray.intersectPlane(tapPlane, hit)) return;
+  return raycaster.ray.intersectPlane(tapPlane, out);
+}
+
+function doTap(cx, cy) {
+  if (game.state !== 'playing') return;
+  if (!screenToGround(cx, cy, hit)) return;
   const x = hit.x, z = hit.z;
   if (game.level.sdf(x, z) > 0.2) return; // tapped the grass
 
@@ -194,12 +199,57 @@ function onTap(e) {
   tapHistory.push({ x, z, t: now });
 
   const mult = 1 + 0.45 * Math.min(nearby, 5);
-  game.sim.splash(x, z, 0.5 + nearby * 0.05, 0.16 * mult);
+  game.sim.splash(x, z, 0.62 + nearby * 0.06, 0.22 * mult);
   spawnRing(x, z, mult);
   audio.plop(mult);
 }
 
-renderer.domElement.addEventListener('pointerdown', onTap);
+// Primary pointer: a quick press is a tap, press-and-drag grabs the pond and
+// pans it. Extra fingers always tap, so you can hold-to-pan and tap at once.
+let drag = null; // { id, x0, y0, lastX, lastY, panning }
+const groundA = new THREE.Vector3();
+const groundB = new THREE.Vector3();
+
+function clampTarget() {
+  const r = game.rect;
+  if (!r) return;
+  camTarget.x = Math.min(Math.max(camTarget.x, r.minX), r.maxX);
+  camTarget.z = Math.min(Math.max(camTarget.z, r.minZ), r.maxZ);
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (game.state !== 'playing') return;
+  if (drag) { doTap(e.clientX, e.clientY); return; } // second finger
+  drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastX: e.clientX, lastY: e.clientY, panning: false };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.panning && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 12) {
+    drag.panning = true;
+  }
+  if (drag.panning) {
+    // keep the grabbed water under the finger
+    const a = screenToGround(drag.lastX, drag.lastY, groundA);
+    const b = screenToGround(e.clientX, e.clientY, groundB);
+    if (a && b) {
+      camTarget.x += groundA.x - groundB.x;
+      camTarget.z += groundA.z - groundB.z;
+      clampTarget();
+    }
+  }
+  drag.lastX = e.clientX;
+  drag.lastY = e.clientY;
+});
+
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.panning && e.type === 'pointerup') doTap(drag.x0, drag.y0);
+  drag = null;
+}
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', endDrag);
 
 // ---------------------------------------------------------------------------
 // scoring & spawning
@@ -310,10 +360,12 @@ function animate() {
     }
   }
 
-  // gentle idle drift so the scene breathes
+  // gentle idle drift so the scene breathes (parked while the player pans)
   camera.position.copy(camTarget).addScaledVector(camDir, camDist);
-  camera.position.x += Math.sin(time * 0.13) * 0.3;
-  camera.position.z += Math.cos(time * 0.09) * 0.2;
+  if (!drag || !drag.panning) {
+    camera.position.x += Math.sin(time * 0.13) * 0.12;
+    camera.position.z += Math.cos(time * 0.09) * 0.08;
+  }
   camera.lookAt(camTarget);
 
   renderer.render(scene, camera);

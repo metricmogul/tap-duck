@@ -20,8 +20,9 @@ water to send out ripples and gently herd them into the wooden pen.
   Reach — each a different shape with its own logs, weeds and pen, then
   the loop continues at a brisker pace.
 
-The whole pond always fits on one screen, so every duck stays in view.
-Works with mouse or touch.
+The camera sits close to the water — press and drag to scroll around the
+pond. A quick press is a tap; extra fingers always tap, so you can hold
+to pan with one hand and splash with the other. Works with mouse or touch.
 
 ## Running it
 

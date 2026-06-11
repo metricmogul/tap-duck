@@ -5,8 +5,8 @@ import { capsule, sdfGradient } from './sdf.js';
 // the simulated water surface and pushed around by its gradient.
 
 const DUCK_RADIUS = 0.3;
-const WAVE_FORCE = 26;
-const MAX_SPEED = 2.4;
+const WAVE_FORCE = 36;
+const MAX_SPEED = 3.4;
 
 const VARIANTS = [
   { name: 'yellow', weight: 0.86, body: 0xffc93c, points: 10 },
@@ -144,7 +144,7 @@ export class DuckFlock {
         vx: 0, vz: 0,
         y: 1.6 + Math.random() * 0.7, vy: 0,
         yaw: Math.random() * Math.PI * 2,
-        pitch: 0, roll: 0,
+        pitch: 0, roll: 0, pitchV: 0, rollV: 0,
         bobPhase: Math.random() * Math.PI * 2,
         wanderPhase: Math.random() * Math.PI * 2,
         state: 'dropping',
@@ -197,7 +197,7 @@ export class DuckFlock {
       // Without this asymmetry a passing ripple nets out to ~zero drift.
       sim.gradientAt(d.x, d.z, this.grad);
       const h = sim.heightAt(d.x, d.z);
-      const crest = h > 0 ? Math.min(1.4, 0.35 + h * 26) : 0.12;
+      const crest = h > 0 ? Math.min(1.8, 0.35 + h * 26) : 0.12;
       d.vx += -this.grad.x * WAVE_FORCE * crest * dt;
       d.vz += -this.grad.z * WAVE_FORCE * crest * dt;
 
@@ -206,7 +206,7 @@ export class DuckFlock {
       d.vz += Math.cos(time * 0.31 + d.wanderPhase * 1.7) * 0.06 * dt;
 
       // drag, heavier in weeds
-      let dragK = 1.05;
+      let dragK = 0.85;
       for (const w of this.level.weeds) {
         const dist = Math.hypot(d.x - w.x, d.z - w.z);
         if (dist < w.r) dragK += 2.4 * (1 - dist / w.r);
@@ -293,11 +293,21 @@ export class DuckFlock {
       const h = sim.heightAt(d.x, d.z);
       d.mesh.position.set(d.x, h * 0.85 + 0.02 + Math.sin(time * 2.1 + d.bobPhase) * 0.012, d.z);
 
+      // Underdamped spring toward the wave slope: ducks rock and wobble for a
+      // moment after each wave instead of gliding stiffly over it.
       sim.gradientAt(d.x, d.z, this.grad);
-      const targetPitch = THREE.MathUtils.clamp(this.grad.z * 0.9, -0.45, 0.45);
-      const targetRoll = THREE.MathUtils.clamp(-this.grad.x * 0.9, -0.45, 0.45);
-      d.pitch += (targetPitch - d.pitch) * Math.min(1, dt * 7);
-      d.roll += (targetRoll - d.roll) * Math.min(1, dt * 7);
+      const targetPitch = THREE.MathUtils.clamp(this.grad.z * 1.6, -0.65, 0.65);
+      const targetRoll = THREE.MathUtils.clamp(-this.grad.x * 1.6, -0.65, 0.65);
+      d.pitchV += ((targetPitch - d.pitch) * 38 - d.pitchV * 4.5) * dt;
+      d.rollV += ((targetRoll - d.roll) * 38 - d.rollV * 4.5) * dt;
+      // a strong crest gives an extra random jolt
+      const slope = Math.hypot(this.grad.x, this.grad.z);
+      if (slope > 0.25 && Math.random() < dt * 9) {
+        d.pitchV += (Math.random() - 0.5) * 2.4;
+        d.rollV += (Math.random() - 0.5) * 2.4;
+      }
+      d.pitch = THREE.MathUtils.clamp(d.pitch + d.pitchV * dt, -0.8, 0.8);
+      d.roll = THREE.MathUtils.clamp(d.roll + d.rollV * dt, -0.8, 0.8);
 
       const sp = Math.hypot(d.vx, d.vz);
       if (sp > 0.12) {

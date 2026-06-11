@@ -91,8 +91,8 @@ export class WaterSim {
           if (!mask[c]) continue;
           let h = u[c] + v[c] * (1 / SUBSTEPS);
           // soft amplitude cap: stacked taps can't heave the surface over the banks
-          if (h > 0.3) { h = 0.3 + (h - 0.3) * 0.25; if (h > 0.42) h = 0.42; }
-          else if (h < -0.3) { h = -0.3 + (h + 0.3) * 0.25; if (h < -0.42) h = -0.42; }
+          if (h > 0.38) { h = 0.38 + (h - 0.38) * 0.25; if (h > 0.52) h = 0.52; }
+          else if (h < -0.38) { h = -0.38 + (h + 0.38) * 0.25; if (h < -0.52) h = -0.52; }
           u[c] = h;
         }
       }
@@ -117,7 +117,7 @@ export class WaterSim {
         const dx = (i - gx) / rc;
         const dz = (j - gz) / rc;
         const g = Math.exp(-(dx * dx + dz * dz) * 2.2);
-        this.u[c] = Math.min(this.u[c] + strength * g, 0.5); // taps can't pile past the cap
+        this.u[c] = Math.min(this.u[c] + strength * g, 0.6); // taps can't pile past the cap
         this.v[c] += strength * 0.35 * g;
       }
     }
