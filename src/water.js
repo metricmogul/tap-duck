@@ -6,8 +6,11 @@ import { capsule } from './sdf.js';
 // gradientAt), so what you see is exactly what pushes the ducks.
 
 const SUBSTEPS = 2;
-const WAVE_C = 0.42; // courant-ish factor, must stay < 0.5 for stability
-const BASE_DAMP = 0.9965;
+// WAVE_C sets propagation speed (∝ √WAVE_C, stability ceiling ~0.5). Kept low
+// so rings amble across the pond like real ripples (~3 m/s) instead of
+// flashing over it, and reflections off the banks read clearly.
+const WAVE_C = 0.055;
+const BASE_DAMP = 0.9988; // low damping: rings survive the crossing and the bounce
 const WEED_DAMP = 0.962;
 
 export class WaterSim {
@@ -56,8 +59,9 @@ export class WaterSim {
             d = Math.min(d, BASE_DAMP + (WEED_DAMP - BASE_DAMP) * Math.min(1, t * 1.6));
           }
         }
-        // extra damping near the shore stops standing waves ringing forever
-        if (sd > -1.0) d -= 0.0055;
+        // a whisper of damping right at the edge keeps corners from ringing,
+        // but shores stay reflective so waves visibly bounce back
+        if (sd > -0.4) d -= 0.0015;
         this.damp[idx] = d;
       }
     }
@@ -90,17 +94,19 @@ export class WaterSim {
           const c = row + i;
           if (!mask[c]) continue;
           let h = u[c] + v[c] * (1 / SUBSTEPS);
-          // soft amplitude cap: stacked taps can't heave the surface over the banks
-          if (h > 0.38) { h = 0.38 + (h - 0.38) * 0.25; if (h > 0.52) h = 0.52; }
-          else if (h < -0.38) { h = -0.38 + (h + 0.38) * 0.25; if (h < -0.52) h = -0.52; }
+          // gentle compression above the knee: keeps the surface inside the
+          // banks without freezing the dynamics when taps stack up
+          if (h > 0.4) { h = 0.4 + (h - 0.4) * 0.45; if (h > 0.62) h = 0.62; }
+          else if (h < -0.4) { h = -0.4 + (h + 0.4) * 0.45; if (h < -0.62) h = -0.62; }
           u[c] = h;
         }
       }
     }
   }
 
-  // A tap: heave the surface up in a gaussian mound. It collapses into an
-  // outgoing crest ring — and crests are what shove the ducks.
+  // A tap: a modest mound plus a strong upward impulse. The impulse goes into
+  // velocity, so rapid taps on the same spot keep radiating fresh crest rings
+  // even when the surface there is already heaved up to the cap.
   splash(x, z, radius, strength) {
     const gx = this.worldToGridX(x);
     const gz = this.worldToGridZ(z);
@@ -117,8 +123,8 @@ export class WaterSim {
         const dx = (i - gx) / rc;
         const dz = (j - gz) / rc;
         const g = Math.exp(-(dx * dx + dz * dz) * 2.2);
-        this.u[c] = Math.min(this.u[c] + strength * g, 0.6); // taps can't pile past the cap
-        this.v[c] += strength * 0.35 * g;
+        this.u[c] += strength * 0.5 * g;
+        this.v[c] += strength * 0.06 * g;
       }
     }
   }
@@ -199,8 +205,9 @@ const waterFragment = /* glsl */ `
 
     float depth = clamp(-shoreD / 2.6, 0.0, 1.0);
     vec3 waterCol = mix(uShallowColor, uDeepColor, depth);
-    // waves shade their troughs and brighten their crests a touch
-    waterCol *= 1.0 + h * 1.4;
+    // waves shade their troughs and brighten their crests so travelling
+    // rings stay visible all the way across the pond
+    waterCol *= 1.0 + h * 2.8;
 
     vec3 refl = reflect(-viewDir, n);
     vec3 sky = mix(uSkyLow, uSkyHigh, clamp(refl.y, 0.0, 1.0));
@@ -215,7 +222,7 @@ const waterFragment = /* glsl */ `
 
     // foam: a lapping line at the shore plus white on energetic crests
     float shoreFoam = smoothstep(-0.22, -0.02, shoreD) * (0.55 + 0.45 * sin(uTime * 1.4 + p.x * 3.0 + p.y * 2.2));
-    float crestFoam = smoothstep(0.045, 0.14, abs(hR - hL) + abs(hU - hD));
+    float crestFoam = smoothstep(0.03, 0.11, abs(hR - hL) + abs(hU - hD));
     float foam = clamp(shoreFoam * 0.55 + crestFoam * 0.65, 0.0, 1.0);
     col = mix(col, vec3(0.96, 0.98, 0.95), foam);
 
