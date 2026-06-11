@@ -93,7 +93,8 @@ export class WaterSim {
         for (let i = 1; i < gw - 1; i++) {
           const c = row + i;
           if (!mask[c]) continue;
-          let h = u[c] + v[c] * (1 / SUBSTEPS);
+          // slow relaxation toward rest level drains any residual net volume
+          let h = u[c] * 0.9996 + v[c] * (1 / SUBSTEPS);
           // gentle compression above the knee: keeps the surface inside the
           // banks without freezing the dynamics when taps stack up
           if (h > 0.4) { h = 0.4 + (h - 0.4) * 0.45; if (h > 0.62) h = 0.62; }
@@ -104,9 +105,11 @@ export class WaterSim {
     }
   }
 
-  // A tap: a modest mound plus a strong upward impulse. The impulse goes into
-  // velocity, so rapid taps on the same spot keep radiating fresh crest rings
-  // even when the surface there is already heaved up to the cap.
+  // A tap displaces water, it doesn't add any: a central mound ringed by a
+  // shallow trough, with zero net volume (difference of gaussians). Without
+  // this, sustained tapping literally fills the pond — the surface pins at
+  // the height cap, rings vanish against the raised plateau, and the flat
+  // top has no gradient left to push ducks with.
   splash(x, z, radius, strength) {
     const gx = this.worldToGridX(x);
     const gz = this.worldToGridZ(z);
@@ -122,9 +125,11 @@ export class WaterSim {
         if (this.mask[c] === 0) continue;
         const dx = (i - gx) / rc;
         const dz = (j - gz) / rc;
-        const g = Math.exp(-(dx * dx + dz * dz) * 2.2);
-        this.u[c] += strength * 0.5 * g;
-        this.v[c] += strength * 0.06 * g;
+        const q = dx * dx + dz * dz;
+        // core/skirt weights chosen so the kernel integrates to ~zero
+        const g = Math.exp(-q * 2.2) - 0.41 * Math.exp(-q * 0.9);
+        this.u[c] += strength * 0.85 * g;
+        this.v[c] += strength * 0.1 * g;
       }
     }
   }
@@ -141,6 +146,9 @@ export class WaterSim {
   }
 
   heightAt(x, z) { return this.sampleBilinear(this.u, x, z); }
+
+  // rate of change of the surface, in height units per second
+  dudtAt(x, z) { return this.sampleBilinear(this.v, x, z) * 60; }
 
   gradientAt(x, z, out) {
     const e = this.cellX;

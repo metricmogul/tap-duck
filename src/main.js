@@ -199,7 +199,7 @@ function doTap(cx, cy) {
   tapHistory.push({ x, z, t: now });
 
   const mult = 1 + 0.45 * Math.min(nearby, 5);
-  game.sim.splash(x, z, 0.62 + nearby * 0.06, 0.22 * mult);
+  game.sim.splash(x, z, 0.62 + nearby * 0.06, 0.3 * mult);
   spawnRing(x, z, mult);
   audio.plop(mult);
 }

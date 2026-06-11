@@ -5,7 +5,7 @@ import { capsule, sdfGradient } from './sdf.js';
 // the simulated water surface and pushed around by its gradient.
 
 const DUCK_RADIUS = 0.3;
-const WAVE_FORCE = 36;
+const WAVE_FORCE = 55; // coefficient on the wave-momentum push -(du/dt)·∇u
 const MAX_SPEED = 3.4;
 
 const VARIANTS = [
@@ -193,13 +193,13 @@ export class DuckFlock {
       if (d.state !== 'float') continue;
 
       // --- forces from the water surface ---
-      // Crests shove the duck down their leading face; troughs barely pull.
-      // Without this asymmetry a passing ripple nets out to ~zero drift.
+      // Wave momentum flux: F = -(du/dt)·∇u always points in a travelling
+      // wave's direction of motion and vanishes for standing slosh. (A plain
+      // slope force nets to zero — a passing crest pushes then pulls back.)
       sim.gradientAt(d.x, d.z, this.grad);
-      const h = sim.heightAt(d.x, d.z);
-      const crest = h > 0 ? Math.min(1.8, 0.35 + h * 26) : 0.12;
-      d.vx += -this.grad.x * WAVE_FORCE * crest * dt;
-      d.vz += -this.grad.z * WAVE_FORCE * crest * dt;
+      const dudt = THREE.MathUtils.clamp(sim.dudtAt(d.x, d.z), -4, 4);
+      d.vx += -this.grad.x * dudt * WAVE_FORCE * dt;
+      d.vz += -this.grad.z * dudt * WAVE_FORCE * dt;
 
       // a slow idle wander keeps still ducks alive
       d.vx += Math.sin(time * 0.4 + d.wanderPhase) * 0.06 * dt;
