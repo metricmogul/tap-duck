@@ -19,8 +19,19 @@ sun sets.
   (50 / 75 / 100 ducks home) and move on. The final 25 seconds are the
   **golden hour** — every capture pays double. Clear all 100 early and a
   bonus flock of golden ducks tips in.
-- Sweep several ducks into the pen on one wave for **flock bonuses**.
-  Rare pink (25) and golden (50) ducks pay more.
+- Sweep several ducks into the pen on one wave for **flock bonuses**, and
+  keep captures coming to build the **chain multiplier** (×2–×5, cools off
+  if you go quiet). Bounce a duck off a log into the pen for a **bank
+  shot**; send one in from across the pond for a **long drive**. Rare pink
+  (25) and golden (50) ducks pay more — but goldens flee your waves.
+- The flock has personalities: **mama ducks** trail broods of ducklings
+  (pen the mama and the brood follows her in) and **sleepy ducks** doze
+  through ripples until a proper wave wakes them.
+- The day has a cast and a diary: **a goose** crash-lands mid-morning and
+  barges honking through your rafts — panic it with a big wave and shove
+  it home for a fat bonus. **Bread tosses** cluster ducks for fifteen
+  seconds; **rain showers** pay 1.5× while they last; a frog potters
+  between the lily pads.
 - Some ponds have weather: a **steady wind** that drifts the flock (weed
   beds give shelter), or a **river current** that carries ducks past the
   pen's calm side-bay — flick them out of the flow as they pass.

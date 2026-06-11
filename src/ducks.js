@@ -17,6 +17,13 @@ const VARIANTS = [
   { name: 'pink', weight: 0.09, color: new THREE.Color(0xf585b6), points: 25 },
   { name: 'golden', weight: 0.03, color: new THREE.Color(0xf7b733), points: 50 },
 ];
+// brood ducks aren't drawn from the weighted pool
+const MAMA = { name: 'mama', color: new THREE.Color(0xa97e4f), points: 40 };
+const DUCKLING = { name: 'duckling', color: new THREE.Color(0xffe9a0), points: 5 };
+
+const BROODS = 5; // mamas afloat at dawn
+const BROOD_SIZE = 3; // ducklings each
+const SLEEPY_FRACTION = 0.14;
 
 function pickVariant(rng) {
   let r = rng();
@@ -72,6 +79,11 @@ export class DuckFlock {
     this.captured = [];
     this.dropSplashes = 0;
     this.clearedBase = 0; // non-bonus ducks penned
+    this.bread = null; // bits ducks paddle toward, set during a bread toss
+    this.scare = null; // the goose's position; nearby ducks flee it
+    this.nibbleCounts = new Map(); // bread bit -> ducks gathered on it
+    this.wokeCount = 0; // sleepers jolted awake this frame
+    this.sleepColor = new THREE.Color(0xffc93c).multiplyScalar(0.62);
 
     const maxCount = (level.duckCount || 100) + 80;
     const { bodyGeo, beakGeo, eyesGeo } = buildGeometries();
@@ -141,18 +153,45 @@ export class DuckFlock {
       wait: dropDelay,
       penT: 0,
       scale: 1.0 + Math.random() * 0.2,
+      bankT: 0, // recently bounced off a log (bank-shot window)
+      riding: false, rideX: 0, rideZ: 0, // where the current wave ride began
+      asleep: false, // dozing ducks ignore ripples until a big wave wakes them
+      leader: null, slot: 0, // ducklings paddle in line astern of their mama
+      flee: 0, fleeX: 0, fleeZ: 0, // startled goldens paddle ahead of the wave
     };
   }
 
   // the dawn flotilla: all ducks rain in over the first few seconds
   spawnInitial(count) {
     let spawned = 0;
-    for (let i = 0; i < count; i++) {
+    // broods first: a mama and her ducklings splash down together
+    for (let b = 0; b < BROODS && spawned < count; b++) {
+      const spot = this.findOpenSpot(2.2);
+      if (!spot) break;
+      const delay = Math.random() * 4;
+      const mama = this.makeDuck(spot, MAMA, delay, false);
+      mama.scale = 1.45;
+      this.ducks.push(mama);
+      spawned++;
+      for (let c = 0; c < BROOD_SIZE && spawned < count; c++) {
+        const a = (c / BROOD_SIZE) * Math.PI * 2;
+        const kid = this.makeDuck(
+          { x: spot.x + Math.cos(a) * 0.7, z: spot.z + Math.sin(a) * 0.7 },
+          DUCKLING, delay + 0.3 + c * 0.2, false,
+        );
+        kid.scale = 0.55;
+        kid.leader = mama;
+        kid.slot = c;
+        this.ducks.push(kid);
+        spawned++;
+      }
+    }
+    while (spawned < count) {
       const spot = this.findOpenSpot();
       if (!spot) break;
       const d = this.makeDuck(spot, pickVariant(Math.random), Math.random() * 4.5, false);
+      if (d.variant.name === 'yellow' && Math.random() < SLEEPY_FRACTION) d.asleep = true;
       this.ducks.push(d);
-      this.setColor(this.ducks.length - 1, d.variant.color);
       spawned++;
     }
     this.baseTotal = spawned;
@@ -182,6 +221,8 @@ export class DuckFlock {
   update(dt, time) {
     this.captured.length = 0;
     this.dropSplashes = 0;
+    this.wokeCount = 0;
+    this.nibbleCounts.clear();
     const sim = this.sim;
     const pen = this.level.pen;
     const stream = this.level.stream;
@@ -215,8 +256,36 @@ export class DuckFlock {
       // wave momentum flux: pushes along a travelling wave's direction
       sim.gradientAt(d.x, d.z, this.grad);
       const dudt = THREE.MathUtils.clamp(sim.dudtAt(d.x, d.z), -4, 4);
-      d.vx += -this.grad.x * dudt * WAVE_FORCE * dt;
-      d.vz += -this.grad.z * dudt * WAVE_FORCE * dt;
+      let fx = -this.grad.x * dudt * WAVE_FORCE;
+      let fz = -this.grad.z * dudt * WAVE_FORCE;
+      const fMag = Math.hypot(fx, fz);
+
+      // dozing ducks shrug off ripples; a proper wave jolts them awake
+      if (d.asleep) {
+        if (fMag > 1.1) {
+          d.asleep = false;
+          d.pitchV += 2.6;
+          this.wokeCount++;
+        } else {
+          fx *= 0.06;
+          fz *= 0.06;
+        }
+      }
+
+      // goldens are wary: a strong wave startles them into paddling ahead of it
+      if (d.variant.name === 'golden' && fMag > 0.7 && d.flee <= 0) {
+        d.flee = 1.2;
+        d.fleeX = fx / fMag;
+        d.fleeZ = fz / fMag;
+      }
+      if (d.flee > 0) {
+        d.flee -= dt;
+        d.vx += d.fleeX * 3.2 * dt;
+        d.vz += d.fleeZ * 3.2 * dt;
+      }
+
+      d.vx += fx * dt;
+      d.vz += fz * dt;
 
       // weeds shelter ducks: drift forces fade inside a weed bed
       let shelter = 1;
@@ -242,9 +311,72 @@ export class DuckFlock {
         d.vz += this.flow.z * 0.85 * shelter * dt;
       }
 
-      // idle wander so a calm flock still looks alive
-      d.vx += Math.sin(time * 0.4 + d.wanderPhase) * 0.06 * dt;
-      d.vz += Math.cos(time * 0.31 + d.wanderPhase * 1.7) * 0.06 * dt;
+      // ducklings paddle in line astern of their mama — and when she's home,
+      // they follow her straight into the pen
+      if (d.leader) {
+        const L = d.leader;
+        if (L.state === 'float') {
+          const off = 0.55 + d.slot * 0.38;
+          const tx = L.x - Math.sin(L.yaw) * off;
+          const tz = L.z - Math.cos(L.yaw) * off;
+          const ddx = tx - d.x, ddz = tz - d.z;
+          const dist = Math.hypot(ddx, ddz);
+          if (dist > 0.15) {
+            const k = Math.min(2.6, 0.8 + dist * 0.9);
+            d.vx += (ddx / dist) * k * dt;
+            d.vz += (ddz / dist) * k * dt;
+          } else {
+            dragK += 1.2;
+          }
+        } else {
+          const ddx = pen.x - d.x, ddz = pen.z - d.z;
+          const dist = Math.hypot(ddx, ddz) || 1e-4;
+          if (dist < 9) {
+            d.vx += (ddx / dist) * 1.5 * dt;
+            d.vz += (ddz / dist) * 1.5 * dt;
+          } else {
+            d.leader = null; // too far behind; grows up on the spot
+          }
+        }
+      }
+
+      // bread! paddle over and crowd around the nearest bit
+      if (!d.asleep && this.bread && this.bread.length) {
+        let best = null, bd = 56.25; // within 7.5m
+        for (const b of this.bread) {
+          if (!b.afloat) continue;
+          const dd = (d.x - b.x) ** 2 + (d.z - b.z) ** 2;
+          if (dd < bd) { bd = dd; best = b; }
+        }
+        if (best) {
+          const dist = Math.sqrt(bd) || 1e-4;
+          d.vx += ((best.x - d.x) / dist) * 0.55 * dt;
+          d.vz += ((best.z - d.z) / dist) * 0.55 * dt;
+          if (dist < 1.1) {
+            dragK += 1.8; // settle in and nibble
+            this.nibbleCounts.set(best, (this.nibbleCounts.get(best) || 0) + 1);
+          }
+        }
+      }
+
+      // flee the goose
+      if (this.scare) {
+        const sx = d.x - this.scare.x, sz = d.z - this.scare.z;
+        const sd2 = Math.hypot(sx, sz);
+        if (sd2 < 2.0 && sd2 > 1e-4) {
+          const k = (1 - sd2 / 2.0) * 5.5;
+          d.vx += (sx / sd2) * k * dt;
+          d.vz += (sz / sd2) * k * dt;
+        }
+      }
+
+      // idle wander so a calm flock still looks alive (sleepers just drift)
+      if (!d.asleep) {
+        d.vx += Math.sin(time * 0.4 + d.wanderPhase) * 0.06 * dt;
+        d.vz += Math.cos(time * 0.31 + d.wanderPhase * 1.7) * 0.06 * dt;
+      } else {
+        dragK += 1.6;
+      }
 
       const dragF = Math.exp(-dt * dragK);
       d.vx *= dragF;
@@ -255,6 +387,16 @@ export class DuckFlock {
         d.vx = (d.vx / sp) * MAX_SPEED;
         d.vz = (d.vz / sp) * MAX_SPEED;
       }
+
+      // trick-shot bookkeeping: remember where a fast wave ride began
+      if (!d.riding && sp > 1.3) {
+        d.riding = true;
+        d.rideX = d.x;
+        d.rideZ = d.z;
+      } else if (d.riding && sp < 0.4) {
+        d.riding = false;
+      }
+      if (d.bankT > 0) d.bankT -= dt;
 
       d.x += d.vx * dt;
       d.z += d.vz * dt;
@@ -283,6 +425,7 @@ export class DuckFlock {
           if (vn < 0) {
             d.vx -= this.grad.x * vn * 1.5;
             d.vz -= this.grad.z * vn * 1.5;
+            if (vn < -0.5) d.bankT = 2.5; // a real carom — bank-shot window opens
           }
         }
       }
@@ -303,9 +446,9 @@ export class DuckFlock {
         const b = this.ducks[j];
         if (b.state !== 'float') continue;
         let dx = b.x - a.x, dz = b.z - a.z;
-        if (dx > 0.6 || dx < -0.6 || dz > 0.6 || dz < -0.6) continue;
+        if (dx > 0.8 || dx < -0.8 || dz > 0.8 || dz < -0.8) continue;
         const dist = Math.hypot(dx, dz);
-        const minD = 0.56;
+        const minD = (a.scale + b.scale) * 0.26; // ducklings pack in tight
         if (dist < minD && dist > 1e-5) {
           dx /= dist; dz /= dist;
           const push = (minD - dist) * 0.5;
@@ -382,8 +525,8 @@ export class DuckFlock {
       this.bodyMesh.setMatrixAt(i, dummy.matrix);
       this.beakMesh.setMatrixAt(i, dummy.matrix);
       this.eyesMesh.setMatrixAt(i, dummy.matrix);
-      // keep colors aligned after splices
-      this.bodyMesh.setColorAt(i, d.variant.color);
+      // keep colors aligned after splices; sleepers show a drowsy tint
+      this.bodyMesh.setColorAt(i, d.asleep ? this.sleepColor : d.variant.color);
       needColor = true;
     }
     for (const m of [this.bodyMesh, this.beakMesh, this.eyesMesh]) {

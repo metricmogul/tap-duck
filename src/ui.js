@@ -21,6 +21,9 @@ const els = {
   btnStart: document.getElementById('btn-start'),
   btnNext: document.getElementById('btn-next'),
   toasts: document.getElementById('toasts'),
+  chainBadge: document.getElementById('chain-badge'),
+  chainMult: document.getElementById('chain-mult'),
+  chainBar: document.getElementById('chain-bar'),
 };
 
 const v = new THREE.Vector3();
@@ -46,6 +49,12 @@ export const ui = {
     els.windRow.style.display = '';
     // screen-space: world +x is right, world +z is down
     els.windArrow.style.transform = `rotate(${angle}rad)`;
+  },
+  setChain(mult, frac, live) {
+    els.chainBadge.classList.toggle('live', live);
+    if (!live) return;
+    els.chainMult.textContent = `×${mult}`;
+    els.chainBar.style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
   },
   setProgress(penned, target) {
     els.penned.textContent = penned;

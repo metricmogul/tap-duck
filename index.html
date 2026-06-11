@@ -60,6 +60,22 @@
     #wind-row { margin-top: 6px; font-size: 12px; opacity: 0.8; display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
     #wind-arrow { display: inline-block; font-size: 16px; transition: transform 0.5s ease; }
 
+    #chain-badge { display: none; align-items: center; gap: 8px; margin-top: 4px; }
+    #chain-badge.live { display: flex; }
+    #chain-mult {
+      font-weight: 800; font-size: 16px; color: #c4731a;
+      text-shadow: 0 0 8px rgba(232, 162, 61, 0.4);
+    }
+    #chain-bar-wrap {
+      width: 64px; height: 6px; border-radius: 3px;
+      background: rgba(44, 58, 47, 0.15); overflow: hidden;
+    }
+    #chain-bar {
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, #e8a23d, #f6c667);
+      border-radius: 3px;
+    }
+
     #progress-wrap {
       position: relative;
       width: 240px; height: 12px; margin-top: 6px;
@@ -152,6 +168,10 @@
     <div class="card">
       <div class="label">Score</div>
       <div class="big" id="score">0</div>
+      <div id="chain-badge">
+        <span id="chain-mult">&times;2</span>
+        <div id="chain-bar-wrap"><div id="chain-bar"></div></div>
+      </div>
     </div>
     <div class="card">
       <div class="label">Pond</div>

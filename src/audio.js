@@ -156,6 +156,91 @@ export function chime() {
   });
 }
 
+// An indignant goose: two nasal sawtooth bursts through a honky bandpass.
+export function honk() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  for (let i = 0; i < 2; i++) {
+    const t0 = t + i * 0.21;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(196, t0);
+    osc.frequency.linearRampToValueAtTime(164, t0 + 0.16);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 740;
+    f.Q.value = 2.2;
+    const g = ctx.createGain();
+    env(g, t0, 0.16, 0.02, 0.16);
+    osc.connect(f).connect(g).connect(master);
+    osc.start(t0);
+    osc.stop(t0 + 0.22);
+  }
+}
+
+// A contented frog.
+export function croak() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(92, t);
+  osc.frequency.linearRampToValueAtTime(70, t + 0.18);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 26;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = 18;
+  lfo.connect(lfoG).connect(osc.frequency);
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = 420;
+  const g = ctx.createGain();
+  env(g, t, 0.07, 0.02, 0.2);
+  osc.connect(f).connect(g).connect(master);
+  osc.start(t);
+  osc.stop(t + 0.26);
+  lfo.start(t);
+  lfo.stop(t + 0.26);
+}
+
+// Rising blips as the capture chain steps up a level.
+export function chainUp(level) {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const base = 520 * Math.pow(1.22, Math.min(level, 6));
+  [1, 1.5].forEach((m, i) => {
+    const t0 = t + i * 0.09;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = base * m;
+    const g = ctx.createGain();
+    env(g, t0, 0.11, 0.01, 0.16);
+    osc.connect(g).connect(master);
+    osc.start(t0);
+    osc.stop(t0 + 0.2);
+  });
+}
+
+// Rain bed: high filtered noise whose level follows the shower's intensity.
+let rainNodes = null;
+export function rainLevel(k) {
+  if (!ctx) return;
+  if (!rainNodes) {
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 1800;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    src.connect(f).connect(g).connect(master);
+    src.start();
+    rainNodes = { g };
+  }
+  rainNodes.g.gain.setTargetAtTime(0.05 * k, ctx.currentTime, 0.4);
+}
+
 // A quiet bed of wind/water and the occasional far-off bird.
 function startAmbience() {
   const n = ctx.createBufferSource();

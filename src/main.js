@@ -4,6 +4,7 @@ import { getLevel, RATING } from './levels.js';
 import { WaterSim, WaterMesh } from './water.js';
 import { Terrain } from './terrain.js';
 import { DuckFlock } from './ducks.js';
+import { Goose, Frog, BreadToss, Rain } from './critters.js';
 import { ui } from './ui.js';
 import * as audio from './audio.js';
 
@@ -58,6 +59,7 @@ const cSun = new THREE.Color();
 const cSkyH = new THREE.Color();
 const cSkyL = new THREE.Color();
 const cBg = new THREE.Color();
+const RAIN_GREY = new THREE.Color(0x8e9c98);
 const sunDir = new THREE.Vector3(0.3, 0.8, 0.5).normalize();
 
 function applyDaylight(frac) {
@@ -72,12 +74,20 @@ function applyDaylight(frac) {
   cSkyL.lerpColors(ca.skyL, cb.skyL, k);
   cBg.lerpColors(ca.bg, cb.bg, k);
 
+  // a passing shower greys the light down
+  const rk = game.rainK || 0;
+  if (rk > 0.01) {
+    cSkyH.lerp(RAIN_GREY, rk * 0.55);
+    cSkyL.lerp(RAIN_GREY, rk * 0.4);
+    cBg.lerp(RAIN_GREY, rk * 0.35);
+  }
+
   const elev = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(a.elev, b.elev, k));
   const az = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(a.az, b.az, k));
   sunDir.set(Math.cos(elev) * Math.sin(az), Math.sin(elev), Math.cos(elev) * Math.cos(az));
 
   sun.color.copy(cSun);
-  sun.intensity = THREE.MathUtils.lerp(a.ints, b.ints, k);
+  sun.intensity = THREE.MathUtils.lerp(a.ints, b.ints, k) * (1 - 0.42 * (game.rainK || 0));
   sun.position.copy(sunDir).multiplyScalar(40);
   hemi.intensity = THREE.MathUtils.lerp(a.hemi, b.hemi, k);
   scene.background.copy(cBg);
@@ -177,6 +187,17 @@ const game = {
   goldenToast: false,
   windAngle: 0,
   windVec: { x: 0, z: 0 },
+  // liveliness: the goose, scheduled day events, rain, and the capture chain
+  goose: null,
+  frog: null,
+  bread: null,
+  rain: null,
+  rainUntil: -1,
+  rainK: 0,
+  events: [],
+  chainCount: 0,
+  chainTimer: 0,
+  chainMult: 1,
 };
 
 function bestKey(index) { return `tapduck_best_${index % 4}`; }
@@ -204,6 +225,32 @@ function buildLevel(index) {
   scene.add(game.terrain.group, game.water.mesh);
   game.flock.spawnInitial(game.level.duckCount);
 
+  game.goose = new Goose(scene, game.level, game.sim);
+  game.bread = new BreadToss(scene, game.sim, game.level);
+  game.rain = new Rain(scene);
+  game.rainUntil = -1;
+  game.rainK = 0;
+  const pads = game.terrain.lilyPads.filter((p) => !p.lift);
+  game.frog = pads.length >= 2 ? new Frog(scene, pads, game.sim) : null;
+
+  // the day's diary: the goose arrives early, bread is thrown twice, and
+  // there's a fair chance of an afternoon shower
+  const dur = game.level.duration;
+  game.events = [
+    { t: 16 + Math.random() * 8, type: 'goose' },
+    { t: dur * 0.25 + Math.random() * dur * 0.1, type: 'bread' },
+    { t: dur * 0.6 + Math.random() * dur * 0.12, type: 'bread' },
+  ];
+  if (Math.random() < 0.65) {
+    game.events.push({ t: dur * 0.4 + Math.random() * dur * 0.12, type: 'rain' });
+  }
+  game.events.sort((a, b) => a.t - b.t);
+
+  game.chainCount = 0;
+  game.chainTimer = 0;
+  game.chainMult = 1;
+  ui.setChain(1, 0, false);
+
   const b = game.level.bounds;
   sun.shadow.camera.left = -b.w * 0.75;
   sun.shadow.camera.right = b.w * 0.75;
@@ -230,6 +277,11 @@ function teardownLevel() {
   game.flock.dispose();
   game.terrain.dispose();
   game.water.dispose();
+  game.goose.dispose();
+  game.bread.dispose();
+  game.rain.dispose();
+  if (game.frog) game.frog.dispose();
+  audio.rainLevel(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,24 +498,81 @@ function isGoldenHour() {
   return game.level.duration - game.elapsed <= GOLDEN_HOUR;
 }
 
+// every capture feeds the chain; ~12 quiet seconds breaks it
+function feedChain() {
+  game.chainCount++;
+  game.chainTimer = 12;
+  const mult = Math.min(1 + Math.floor(game.chainCount / 4), 5);
+  if (mult > game.chainMult) {
+    game.chainMult = mult;
+    ui.toast(`Chain ×${mult}!`, 'gold');
+    audio.chainUp(mult);
+  }
+}
+
+function scoreMultiplier() {
+  let m = game.chainMult;
+  if (isGoldenHour()) m *= 2;
+  if (game.rainK > 0.5) m *= 1.5;
+  return m;
+}
+
 function handleCaptures(captured) {
   for (const d of captured) {
     game.flockCount++;
     game.flockTimer = 2.0;
+    feedChain();
+
     let points = d.variant.points + Math.min((game.flockCount - 1) * 5, 60);
-    if (isGoldenHour()) points *= 2;
+    let label = '';
+    // trick shots: bounced off a log on the way in, or rode one wave a long way
+    if (d.bankT > 0) {
+      points += 30;
+      label = 'Bank shot! ';
+    }
+    if (d.riding && Math.hypot(d.rideX - game.level.pen.x, d.rideZ - game.level.pen.z) > 8) {
+      points += 40;
+      label = label ? 'Trick shot! ' : 'Long drive! ';
+    }
+    points = Math.round(points * scoreMultiplier());
     game.score += points;
     audio.squeak(Math.min(game.flockCount, 8));
     const where = new THREE.Vector3(d.x, 0.5, d.z);
-    const gold = d.variant.name === 'golden' || isGoldenHour();
-    ui.floater(`+${points}`, where, camera, gold ? '#ffe27a' : undefined);
+    const gold = label || d.variant.name === 'golden' || isGoldenHour();
+    ui.floater(`${label}+${points}`, where, camera, gold ? '#ffe27a' : undefined);
   }
   if (captured.length) {
+    if (captured.some((d) => d.variant.name === 'mama')) {
+      ui.toast('Mama’s home — the brood follows!');
+    }
     if (game.flockCount === 4 || game.flockCount === 8 || game.flockCount === 14) {
       ui.toast(`Flock of ${game.flockCount}!`);
     }
     ui.setScore(game.score);
     ui.setProgress(Math.min(game.flock.clearedBase, game.flock.baseTotal), game.flock.baseTotal);
+  }
+}
+
+function triggerEvent(ev) {
+  if (ev.type === 'goose') {
+    const spot = game.flock.findOpenSpot(2);
+    if (spot) {
+      game.goose.enter(spot);
+      ui.toast('A goose has crash-landed!');
+    }
+  } else if (ev.type === 'bread') {
+    const pen = game.level.pen;
+    for (let i = 0; i < 30; i++) {
+      const spot = game.flock.findOpenSpot(0.5);
+      if (spot && Math.hypot(spot.x - pen.x, spot.z - pen.z) > pen.r + 5) {
+        game.bread.toss(spot.x, spot.z);
+        ui.toast('Someone’s throwing bread!');
+        break;
+      }
+    }
+  } else if (ev.type === 'rain') {
+    game.rainUntil = game.elapsed + 38;
+    ui.toast('Rain shower — 1.5× points while it lasts!');
   }
 }
 
@@ -535,15 +644,61 @@ function animate() {
       if (spot) game.sim.splash(spot.x, spot.z, 1.6, 0.012 + (wind ? wind.speed * 0.02 : 0));
     }
 
+    // the cast: goose scatters rafts, bread gathers them, the frog potters
+    if (game.goose.state !== 'away' && game.goose.state !== 'gone') {
+      let nearby = 0;
+      for (const d of game.flock.ducks) {
+        if (d.state === 'float'
+          && Math.hypot(d.x - game.goose.x, d.z - game.goose.z) < 2.6) nearby++;
+      }
+      game.goose.update(dt, time, nearby);
+      game.flock.scare = game.goose.state === 'cruise' || game.goose.state === 'panic'
+        ? game.goose : null;
+    } else {
+      game.flock.scare = null;
+    }
+    game.bread.update(dt, time, game.flock.nibbleCounts);
+    game.flock.bread = game.bread.bits.length ? game.bread.bits : null;
+    if (game.frog) game.frog.update(dt, time);
+
+    // rain fades in and out around its window
+    const rainTarget = game.elapsed < game.rainUntil ? 1 : 0;
+    game.rainK += (rainTarget - game.rainK) * Math.min(1, dt * 0.7);
+    game.rain.update(dt, game.rainK, camTarget, game.sim, game.level);
+    audio.rainLevel(game.rainK);
+
     const captured = game.flock.update(dt, time);
 
     if (game.state === 'playing') {
       game.elapsed += dt;
       handleCaptures(captured);
       if (game.flock.dropSplashes > 0) audio.plop(0.7);
+      if (game.flock.wokeCount > 0) audio.pop();
+
+      while (game.events.length && game.elapsed >= game.events[0].t) {
+        triggerEvent(game.events.shift());
+      }
+
+      if (game.goose.justPenned) {
+        const points = Math.round(150 * scoreMultiplier());
+        game.score += points;
+        feedChain();
+        ui.toast(`Goose penned! +${points}`, 'gold');
+        ui.setScore(game.score);
+      }
 
       game.flockTimer -= dt;
       if (game.flockTimer <= 0) game.flockCount = 0;
+
+      // the capture chain cools off if you go quiet
+      if (game.chainTimer > 0) {
+        game.chainTimer -= dt;
+        if (game.chainTimer <= 0) {
+          game.chainCount = 0;
+          game.chainMult = 1;
+        }
+      }
+      ui.setChain(game.chainMult, game.chainTimer / 12, game.chainCount > 0);
 
       const timeLeft = game.level.duration - game.elapsed;
       if (!game.goldenToast && timeLeft <= GOLDEN_HOUR) {
