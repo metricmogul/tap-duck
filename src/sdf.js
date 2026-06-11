@@ -15,6 +15,19 @@ export function capsule(x1, z1, x2, z2, r) {
   };
 }
 
+// Smooth subtraction — carves islands out of a pond.
+export function smoothSubtract(k, base, ...cuts) {
+  return (x, z) => {
+    let d = base(x, z);
+    for (const cut of cuts) {
+      const b = -cut(x, z);
+      const h = Math.max(0, Math.min(1, 0.5 - (0.5 * (d - b)) / k));
+      d = d + (b - d) * h + k * h * (1 - h);
+    }
+    return d;
+  };
+}
+
 // Smooth union — blends shapes into one organic pond.
 export function smoothUnion(k, ...fns) {
   return (x, z) => {

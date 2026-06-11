@@ -233,7 +233,8 @@ export class Terrain {
     const mat = new THREE.MeshStandardMaterial({ color: 0x8d8d86, roughness: 0.9, flatShading: true });
     this.disposables.push(geo, mat);
     const pen = this.level.pen;
-    for (let i = 0; i < 26; i++) {
+    const count = Math.min(70, Math.max(26, Math.round((this.level.bounds.w * this.level.bounds.h) / 24)));
+    for (let i = 0; i < count; i++) {
       const p = this.randPointWithSd(rand, 0.25, 2.4);
       if (!p) continue;
       if (Math.hypot(p.x - pen.x, p.z - pen.z) < pen.r + 1.2) continue;
@@ -261,7 +262,8 @@ export class Terrain {
     const pen = this.level.pen;
     const dummy = new THREE.Object3D();
 
-    for (let c = 0; c < 9; c++) {
+    const clusters = Math.min(24, Math.max(9, Math.round((this.level.bounds.w * this.level.bounds.h) / 60)));
+    for (let c = 0; c < clusters; c++) {
       const p = this.randPointWithSd(rand, -0.35, 0.35);
       if (!p) continue;
       if (Math.hypot(p.x - pen.x, p.z - pen.z) < pen.r + 1.6) continue;
@@ -369,10 +371,10 @@ export class Terrain {
     this.disposables.push(woodMat, postGeo);
 
     // fence ring with an opening of ~120 degrees facing open water
-    const opening = Math.PI * 0.62;
+    const opening = Math.PI * 0.72; // a wide mouth — flocks sweep in together
     const start = pen.facing + opening / 2;
     const end = pen.facing + Math.PI * 2 - opening / 2;
-    const segs = 9;
+    const segs = Math.max(9, Math.round(pen.r * 4.5));
     const posts = [];
     for (let i = 0; i <= segs; i++) {
       const a = start + ((end - start) * i) / segs;

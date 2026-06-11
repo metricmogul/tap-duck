@@ -109,6 +109,53 @@ export function fanfare() {
   });
 }
 
+// Stroke swoosh: a noise band whose loudness follows finger speed.
+let strokeNodes = null;
+export function strokeStart() {
+  if (!ctx) return;
+  if (!strokeNodes) {
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 700;
+    f.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    src.connect(f).connect(g).connect(master);
+    src.start();
+    strokeNodes = { g, f };
+  }
+}
+export function strokeMove(speed) {
+  if (!ctx || !strokeNodes) return;
+  const lvl = Math.min(0.16, 0.015 + speed * 0.012);
+  strokeNodes.g.gain.setTargetAtTime(lvl, ctx.currentTime, 0.05);
+  strokeNodes.f.frequency.setTargetAtTime(500 + speed * 90, ctx.currentTime, 0.08);
+}
+export function strokeEnd() {
+  if (!ctx || !strokeNodes) return;
+  strokeNodes.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+}
+
+// Two soft bell notes for the golden hour.
+export function chime() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  [880, 1174.7].forEach((f, i) => {
+    const t0 = t + i * 0.22;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    const g = ctx.createGain();
+    env(g, t0, 0.1, 0.01, 0.7);
+    osc.connect(g).connect(master);
+    osc.start(t0);
+    osc.stop(t0 + 0.8);
+  });
+}
+
 // A quiet bed of wind/water and the occasional far-off bird.
 function startAmbience() {
   const n = ctx.createBufferSource();

@@ -25,11 +25,7 @@
     #app { position: fixed; inset: 0; }
     canvas { display: block; }
 
-    .hud {
-      position: fixed;
-      pointer-events: none;
-      z-index: 10;
-    }
+    .hud { position: fixed; pointer-events: none; z-index: 10; }
     .card {
       background: var(--cream);
       border-radius: 18px;
@@ -44,20 +40,62 @@
     .label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
     .big { font-size: 26px; font-weight: 700; line-height: 1.1; }
     #level-name { font-size: 15px; font-weight: 700; }
+    #best { color: var(--gold); font-size: 13px; letter-spacing: 0.1em; min-height: 16px; }
 
-    #spawn-count { color: var(--gold); }
-    #spawn-timer.urgent { color: #c0392b; }
+    #clock.golden { color: #d98f25; text-shadow: 0 0 12px rgba(232, 162, 61, 0.6); }
+    #day-bar {
+      position: relative; width: 150px; height: 8px; margin-top: 6px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #ffe9c4, #fff3da 45%, #ffc26e 78%, #8f7da8);
+      box-shadow: inset 0 0 0 1px rgba(60, 40, 0, 0.15);
+    }
+    #sun-dot {
+      position: absolute; top: 50%; left: 0;
+      width: 14px; height: 14px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #fff7d8, #f6c14f);
+      box-shadow: 0 0 8px rgba(246, 193, 79, 0.9);
+    }
+    #wind-row { margin-top: 6px; font-size: 12px; opacity: 0.8; display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+    #wind-arrow { display: inline-block; font-size: 16px; transition: transform 0.5s ease; }
 
     #progress-wrap {
-      width: 220px; height: 12px; margin-top: 6px;
+      position: relative;
+      width: 240px; height: 12px; margin-top: 6px;
       background: rgba(44, 58, 47, 0.15);
-      border-radius: 6px; overflow: hidden;
+      border-radius: 6px; overflow: visible;
     }
     #progress-bar {
       height: 100%; width: 0%;
       background: linear-gradient(90deg, #e8a23d, #f6c667);
       border-radius: 6px;
       transition: width 0.35s ease;
+    }
+    .tick {
+      position: absolute; top: -3px; bottom: -3px; width: 2px;
+      background: rgba(44, 58, 47, 0.35); border-radius: 1px;
+    }
+    .tick.bronze { left: 50%; }
+    .tick.silver { left: 75%; }
+    .tick.gold { left: calc(100% - 2px); }
+
+    #toasts {
+      position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: 8px; align-items: center;
+      z-index: 25; pointer-events: none;
+    }
+    .toast {
+      background: rgba(44, 58, 47, 0.82); color: #fff7df;
+      font-weight: 700; font-size: 16px;
+      padding: 8px 22px; border-radius: 999px;
+      animation: toastIn 2.6s ease forwards;
+    }
+    .toast.gold { background: rgba(186, 124, 16, 0.92); }
+    @keyframes toastIn {
+      0% { opacity: 0; transform: translateY(-8px) scale(0.9); }
+      10%, 80% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-6px) scale(0.95); }
     }
 
     .floater {
@@ -84,14 +122,17 @@
       background: var(--cream);
       border-radius: 26px;
       padding: 34px 44px;
-      max-width: 420px;
+      max-width: 440px;
       text-align: center;
       box-shadow: 0 18px 50px rgba(20, 35, 20, 0.4), inset 0 0 0 3px rgba(120, 90, 40, 0.14);
     }
     .panel h1 { font-size: 30px; margin-bottom: 6px; }
-    .panel h2 { font-size: 24px; margin-bottom: 6px; }
+    .panel h2 { font-size: 23px; margin-bottom: 6px; }
     .panel p { font-size: 15px; line-height: 1.5; opacity: 0.8; margin: 8px 0; }
     .panel .duck-emoji { font-size: 44px; }
+    #day-done-stars { font-size: 40px; letter-spacing: 6px; margin: 6px 0; }
+    #day-done-stars .star { color: rgba(44, 58, 47, 0.2); }
+    #day-done-stars .star.on { color: var(--gold); text-shadow: 0 0 14px rgba(232, 162, 61, 0.55); }
     .btn {
       margin-top: 18px;
       font: inherit; font-size: 17px; font-weight: 700;
@@ -115,36 +156,44 @@
     <div class="card">
       <div class="label">Pond</div>
       <div id="level-name">—</div>
-      <div class="label" style="margin-top:2px"><span id="duck-count">0</span> ducks afloat</div>
+      <div id="best"></div>
     </div>
   </div>
 
   <div class="hud card" id="hud-top-right">
-    <div class="label">New ducks in</div>
-    <div class="big"><span id="spawn-timer">12</span>s <span id="spawn-count">+1</span></div>
-    <div class="label">more afloat &rarr; more spawn</div>
+    <div class="label">Daylight left</div>
+    <div class="big" id="clock">3:30</div>
+    <div id="day-bar"><div id="sun-dot"></div></div>
+    <div id="wind-row" style="display:none"><span id="wind-arrow">&#10148;</span> wind</div>
   </div>
 
   <div class="hud card" id="hud-bottom">
-    <div class="label">Penned <span id="penned">0</span> / <span id="target">8</span></div>
-    <div id="progress-wrap"><div id="progress-bar"></div></div>
+    <div class="label">Ducks home <span id="penned">0</span> / <span id="target">100</span></div>
+    <div id="progress-wrap">
+      <div id="progress-bar"></div>
+      <div class="tick bronze"></div>
+      <div class="tick silver"></div>
+      <div class="tick gold"></div>
+    </div>
   </div>
+
+  <div id="toasts"></div>
 
   <div class="overlay" id="overlay-intro">
     <div class="panel">
       <div class="duck-emoji">&#129414;</div>
       <h1>Tap Duck</h1>
-      <p>Plastic ducks have escaped onto the pond. Tap the water to send out ripples and gently herd them into the wooden pen.</p>
-      <p><strong>Tap the same spot quickly for bigger waves.</strong> Press and drag to look around the pond. Every duck left afloat means more ducks will arrive&hellip;</p>
-      <button class="btn" id="btn-start">Begin</button>
+      <p>A hundred plastic ducks are adrift on the pond. Bring as many home to the pen as you can before the sun sets.</p>
+      <p><strong>Tap</strong> for ripples &middot; tap fast for bigger waves. <strong>Swipe</strong> to carve a wake. <strong>Hold, then drag</strong> (or use two fingers) to look around &middot; <strong>pinch or scroll</strong> to zoom.</p>
+      <button class="btn" id="btn-start">Begin the day</button>
     </div>
   </div>
 
   <div class="overlay hidden" id="overlay-level">
     <div class="panel">
-      <div class="duck-emoji">&#127881;</div>
-      <h2 id="level-done-title">Pond cleared!</h2>
-      <p id="level-done-text"></p>
+      <h2 id="day-done-title">The sun sets</h2>
+      <div id="day-done-stars"></div>
+      <p id="day-done-text"></p>
       <button class="btn" id="btn-next">Next pond</button>
     </div>
   </div>

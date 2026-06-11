@@ -1,28 +1,44 @@
 # Tap Duck 🦆
 
-A cosy browser game. Plastic ducks have escaped onto the pond — tap the
-water to send out ripples and gently herd them into the wooden pen.
+A cosy browser game. A hundred plastic ducks are adrift on the pond —
+ripple the water and bring as many home to the pen as you can before the
+sun sets.
 
 ## How it plays
 
-- **Tap the pond** to heave up a mound of water that collapses into a
-  travelling ripple ring. The water is a real height-field wave simulation:
-  ripples propagate, reflect off the shoreline and floating logs, and die
-  away in the weed beds.
-- **Ducks ride the waves.** Wave crests shove them down their leading face —
-  exactly the field you can see is the field that pushes them.
-- **Tap the same spot quickly** to stack ripples into bigger waves.
-- **Herd ducks into the glowing pen** to score. Chained captures build a
-  combo. Keep an eye out for rare pink (25) and golden (50) ducks.
-- **A countdown shows when the next ducks arrive** — and the more ducks
-  still afloat, the more get delivered. Clear the pond before it crowds.
-- Four ponds — Lily Pond, Bramble Bend, Hourglass Hollow and Old Mill
-  Reach — each a different shape with its own logs, weeds and pen, then
-  the loop continues at a brisker pace.
+- **Tap the pond** to raise a ripple ring; tap the same spot quickly to
+  stack bigger waves. **Swipe** to carve a wake behind your finger — move
+  faster than the waves (~3 m/s) and you get a real Kelvin wake, like a
+  little speedboat.
+- The water is a height-field wave simulation: ripples cross the whole
+  pond, bounce off the banks, logs and islands, fade in the weed beds, and
+  push the ducks by wave momentum (−∂u/∂t·∇u) — reflected waves shove
+  ducks on the way back too.
+- **One level is one day.** The light wanders from morning through noon
+  into a warm dusk; when the sun sets you're rated bronze / silver / gold
+  (50 / 75 / 100 ducks home) and move on. The final 25 seconds are the
+  **golden hour** — every capture pays double. Clear all 100 early and a
+  bonus flock of golden ducks tips in.
+- Sweep several ducks into the pen on one wave for **flock bonuses**.
+  Rare pink (25) and golden (50) ducks pay more.
+- Some ponds have weather: a **steady wind** that drifts the flock (weed
+  beds give shelter), or a **river current** that carries ducks past the
+  pen's calm side-bay — flick them out of the flow as they pass.
 
-The camera sits close to the water — press and drag to scroll around the
-pond. A quick press is a tap; extra fingers always tap, so you can hold
-to pan with one hand and splash with the other. Works with mouse or touch.
+Four ponds: **Grand Lake** (calm), **Winding Reach** (the river),
+**Skerry Waters** (islands and a crosswind), **Mallard Marsh** (weedy
+pool maze with a light breeze) — then the days get shorter and the wind
+picks up.
+
+### Controls
+
+| Gesture | Action |
+| --- | --- |
+| Tap | Ripple |
+| Quick drag | Stroke a wake |
+| Hold still, then drag | Pan around the pond |
+| Two fingers / right-drag | Pan |
+| Pinch / scroll wheel | Zoom |
 
 ## Running it
 
@@ -38,16 +54,20 @@ Handy during development: `?level=N` starts on pond N (0–3), and
 
 ## How it's made
 
-- [Three.js](https://threejs.org/) for rendering; no other runtime deps.
-- `src/water.js` — CPU wave-equation simulation on a grid, shared by the
-  water shader (height texture → displaced surface, fresnel sky
-  reflection, shoreline foam, sun glints) and the duck physics.
-- `src/levels.js` + `src/sdf.js` — ponds are signed-distance fields, used
-  for the sim boundary, duck collision, terrain basin and ground texture.
-- `src/terrain.js` — displaced ground plane forms the banks and pond bed;
-  grass/sand/mud, stones, reeds, lily pads, bark-textured logs and the pen
-  fence are all generated procedurally.
-- `src/ducks.js` — clearcoat plastic ducks built from primitives; they bob,
-  tilt with the wave normal and steer to face their motion.
-- `src/audio.js` — every sound (plops, rubber-duck squeaks, birdsong,
-  ambience) is synthesised with WebAudio; there are no asset files at all.
+- [Three.js](https://threejs.org/) for rendering; no other runtime deps,
+  no asset files — every texture and sound is generated procedurally.
+- `src/water.js` — CPU wave-equation sim shared by the water shader and
+  the duck physics. Taps are volume-neutral (a mound ringed by a trough)
+  so sustained tapping can't raise the pond's level.
+- `src/ducks.js` — the whole flotilla is three `InstancedMesh` draw calls
+  (bodies, beaks, eyes) regardless of duck count. Ducks bob, wobble on an
+  underdamped tilt spring, and steer to face their motion.
+- `src/levels.js` + `src/sdf.js` — ponds are signed-distance fields;
+  islands are carved with smooth subtraction; the river current is a flow
+  field along a polyline spine.
+- `src/terrain.js` — displaced ground plane (banks, basin, islands) with
+  painted grass/sand/mud, stones, reeds, lily pads, logs, the pen fence.
+- `src/main.js` — day-cycle lighting keyframes, gesture recognition
+  (tap / stroke / pan / pinch), scoring and ratings.
+- `src/audio.js` — WebAudio synthesis: plops, squeaks, the stroke swoosh,
+  birdsong and chimes.

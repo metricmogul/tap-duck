@@ -14,9 +14,11 @@ const BASE_DAMP = 0.9988; // low damping: rings survive the crossing and the bou
 const WEED_DAMP = 0.962;
 
 export class WaterSim {
-  constructor(level, resolution = 168) {
+  constructor(level, resolution) {
     this.level = level;
     const { w, h } = level.bounds;
+    // keep cells around 0.2m even on the big ponds
+    resolution = resolution || Math.min(236, Math.max(160, Math.round(Math.max(w, h) * 5)));
     this.worldW = w;
     this.worldH = h;
 
